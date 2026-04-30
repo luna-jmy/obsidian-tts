@@ -26,6 +26,7 @@ export interface TtsReaderSettings {
   edgeChineseVoice: string;
   edgeEnglishVoice: string;
   proxyUrl: string;
+  baiduVoiceKey: string;
 }
 
 export type PlaybackStatus =
@@ -61,5 +62,6 @@ export const DEFAULT_SETTINGS: TtsReaderSettings = {
   },
   edgeChineseVoice: "zh-CN-XiaoxiaoNeural",
   edgeEnglishVoice: "en-US-JennyNeural",
-  proxyUrl: ""
+  proxyUrl: "",
+  baiduVoiceKey: "0"
 };

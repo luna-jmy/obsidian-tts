@@ -1,5 +1,5 @@
 import { App, Platform, PluginSettingTab, Setting } from "obsidian";
-import { EDGE_VOICES } from "./edge-tts";
+import { BAIDU_VOICES } from "./edge-tts";
 import type TtsReaderPlugin from "./main";
 
 export class TtsReaderSettingTab extends PluginSettingTab {
@@ -15,7 +15,7 @@ export class TtsReaderSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "tts-reader-settings-note",
       text: Platform.isAndroidApp
-        ? "Android uses Edge TTS cloud voices (requires internet)."
+        ? "Android uses Baidu TTS cloud voices (requires internet)."
         : "This plugin uses your operating system text-to-speech voices. Install offline Chinese and English voices in the OS settings for offline use."
     });
 
@@ -73,49 +73,23 @@ export class TtsReaderSettingTab extends PluginSettingTab {
     if (Platform.isAndroidApp) {
       voiceContainer.createEl("p", {
         cls: "tts-reader-settings-note",
-        text: "Select Edge TTS cloud voices for Chinese and English text."
+        text: "Select a Baidu TTS voice for Chinese and English text."
       });
 
       new Setting(voiceContainer)
-        .setName("Chinese voice")
-        .setDesc("Used for Chinese or mixed Chinese-English text.")
+        .setName("Voice")
+        .setDesc("Voice used for all text on Android.")
         .addDropdown((dropdown) => {
-          EDGE_VOICES.chinese.forEach((v) => {
-            dropdown.addOption(v.name, v.label);
+          BAIDU_VOICES.chinese.forEach((v) => {
+            dropdown.addOption(v.key, v.label);
           });
           dropdown
-            .setValue(this.plugin.settings.edgeChineseVoice)
+            .setValue(this.plugin.settings.baiduVoiceKey)
             .onChange(async (value) => {
-              this.plugin.settings.edgeChineseVoice = value;
+              this.plugin.settings.baiduVoiceKey = value;
               await this.plugin.saveSettings();
             });
         });
-
-      new Setting(voiceContainer)
-        .setName("English voice")
-        .setDesc("Used for English text.")
-        .addDropdown((dropdown) => {
-          EDGE_VOICES.english.forEach((v) => {
-            dropdown.addOption(v.name, v.label);
-          });
-          dropdown
-            .setValue(this.plugin.settings.edgeEnglishVoice)
-            .onChange(async (value) => {
-              this.plugin.settings.edgeEnglishVoice = value;
-              await this.plugin.saveSettings();
-            });
-        });
-
-      new Setting(containerEl)
-        .setName("TTS proxy URL")
-        .setDesc("Cloudflare Worker URL for Edge TTS. Leave default if you haven't deployed your own.")
-        .addText((text) => text
-          .setPlaceholder("https://edge-tts-proxy.your-name.workers.dev")
-          .setValue(this.plugin.settings.proxyUrl)
-          .onChange(async (value) => {
-            this.plugin.settings.proxyUrl = value.trim();
-            await this.plugin.saveSettings();
-          }));
     } else {
       voiceContainer.createEl("p", {
         cls: "tts-reader-settings-note",

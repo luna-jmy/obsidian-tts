@@ -1,27 +1,24 @@
-import { Platform, requestUrl } from "obsidian";
+import { requestUrl } from "obsidian";
 import { ChunkLanguage, PlaybackState, TextChunk, TtsReaderSettings } from "./types";
 
-// Default Cloudflare Worker URL — replace with your own after deployment
-const DEFAULT_PROXY_URL = "https://edge-tts-proxy.your-name.workers.dev";
-
-export const EDGE_VOICES = {
+// Baidu free TTS voices
+const BAIDU_VOICES = {
 	chinese: [
-		{ name: "zh-CN-XiaoxiaoNeural", label: "晓晓 (女, 通用)" },
-		{ name: "zh-CN-XiaoyiNeural", label: "晓伊 (女, 活泼)" },
-		{ name: "zh-CN-YunjianNeural", label: "云健 (男, 热情)" },
-		{ name: "zh-CN-YunxiNeural", label: "云希 (男, 阳光)" },
-		{ name: "zh-CN-YunxiaNeural", label: "云夏 (男, 可爱)" },
-		{ name: "zh-CN-YunyangNeural", label: "云扬 (男, 专业)" },
+		{ key: "0", label: "女声 (默认)" },
+		{ key: "1", label: "男声" },
+		{ key: "3", label: "情感合成-度逍遥" },
+		{ key: "4", label: "情感合成-度丫丫" },
+		{ key: "5", label: "度小娇" },
+		{ key: "6", label: "度小美" },
+		{ key: "7", label: "度小宇" },
 	],
 	english: [
-		{ name: "en-US-JennyNeural", label: "Jenny (Female, Friendly)" },
-		{ name: "en-US-AriaNeural", label: "Aria (Female, Confident)" },
-		{ name: "en-US-GuyNeural", label: "Guy (Male, Passionate)" },
-		{ name: "en-US-ChristopherNeural", label: "Christopher (Male, Authoritative)" },
-		{ name: "en-US-MichelleNeural", label: "Michelle (Female, Pleasant)" },
-		{ name: "en-US-RogerNeural", label: "Roger (Male, Lively)" },
+		{ key: "0", label: "Female (default)" },
+		{ key: "1", label: "Male" },
 	],
 };
+
+export { BAIDU_VOICES };
 
 type SettingsProvider = () => TtsReaderSettings;
 type StateListener = (state: PlaybackState) => void;
@@ -147,31 +144,22 @@ export class EdgeTtsEngine {
 		const voice = this.pickVoice(chunk.language);
 
 		try {
-			const proxyUrl = settings.proxyUrl || DEFAULT_PROXY_URL;
-			const response = await requestUrl({
-				url: proxyUrl,
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					text: chunk.text,
-					voice,
-					rate: this.toProsodyPercent(settings.rate),
-					volume: this.toProsodyPercent(settings.volume),
-					pitch: this.toProsodyHz(settings.pitch),
-				}),
-			});
+			// Baidu TTS: simple HTTP GET, returns MP3
+			const speed = Math.round(settings.rate * 5);
+			const url = `https://tts.baidu.com/text2audio?lan=${voice}&ie=UTF-8&spd=${speed}&pit=${Math.round(settings.pitch * 5)}&vol=${Math.round(settings.volume * 15)}&per=${settings.baiduVoiceKey}&tex=${encodeURIComponent(chunk.text)}`;
+
+			const response = await requestUrl({ url });
 
 			if (this.isStopped || sessionId !== this.sessionId) {
 				return;
 			}
 
-			// response.arrayBuffer is available from Obsidian requestUrl
 			const audioBuffer = response.arrayBuffer;
 			const blob = new Blob([audioBuffer], { type: "audio/mpeg" });
-			const url = URL.createObjectURL(blob);
-			this.currentBlobUrl = url;
+			const blobUrl = URL.createObjectURL(blob);
+			this.currentBlobUrl = blobUrl;
 
-			const audio = new Audio(url);
+			const audio = new Audio(blobUrl);
 			this.audioElement = audio;
 
 			audio.onplay = () => {
@@ -214,32 +202,15 @@ export class EdgeTtsEngine {
 					: typeof error === "object" && error !== null
 						? JSON.stringify(error)
 						: String(error);
-			this.emit("error", `Edge TTS error: ${message}`);
+			this.emit("error", `TTS error: ${message}`);
 		}
 	}
 
 	private pickVoice(language: ChunkLanguage): string {
-		const settings = this.getSettings();
-
-		if (language === "zh" || language === "mixed") {
-			return settings.edgeChineseVoice;
-		}
-
 		if (language === "en") {
-			return settings.edgeEnglishVoice;
+			return "en";
 		}
-
-		return settings.edgeEnglishVoice;
-	}
-
-	private toProsodyPercent(value: number): string {
-		const percent = Math.round((value - 1) * 100);
-		return `${percent >= 0 ? "+" : ""}${percent}%`;
-	}
-
-	private toProsodyHz(value: number): string {
-		const hz = Math.round((value - 1) * 10);
-		return `${hz >= 0 ? "+" : ""}${hz}Hz`;
+		return "zh";
 	}
 
 	private cleanup(): void {

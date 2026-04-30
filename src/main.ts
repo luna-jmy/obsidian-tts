@@ -13,6 +13,7 @@ export default class TtsReaderPlugin extends Plugin {
   private playbackUI: PlaybackFloatingBar | null = null;
   private statusBarEl: HTMLElement | null = null;
   private lastChunks: TextChunk[] = [];
+  private lastFile: TFile | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -103,6 +104,20 @@ export default class TtsReaderPlugin extends Plugin {
     });
 
     this.addSettingTab(new TtsReaderSettingTab(this.app, this));
+
+    // Re-prepare when user switches to a different note
+    const onLeafChange = () => {
+      const file = this.app.workspace.getActiveFile();
+      if (!file || file === this.lastFile) return;
+      if (this.lastChunks.length === 0) return;
+      void this.prepareForFile(file);
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (this.app.workspace as any).on("active-leaf-change", onLeafChange);
+    this.register(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this.app.workspace as any).off("active-leaf-change", onLeafChange);
+    });
   }
 
   onunload(): void {
@@ -165,14 +180,20 @@ export default class TtsReaderPlugin extends Plugin {
   // --- New UX: Icon opens player UI without auto-playing ---
 
   async openTtsPlayer(): Promise<void> {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    const file = view?.file;
-
+    const file = this.app.workspace.getActiveFile();
     if (!file) {
       new Notice("Open a Markdown note before starting TTS.");
       return;
     }
+    await this.prepareForFile(file);
 
+    // Open sidebar if in sidebar mode
+    if (this.settings.controlPosition === "sidebar") {
+      await this.activateSidebarView();
+    }
+  }
+
+  private async prepareForFile(file: TFile): Promise<void> {
     // Stop any current playback
     if (this.tts.isActive()) {
       this.tts.stop(false);
@@ -193,19 +214,14 @@ export default class TtsReaderPlugin extends Plugin {
     }
 
     this.lastChunks = chunks;
+    this.lastFile = file;
 
     // Show UI in "ready" state (prepared but not playing)
-    const readyState: PlaybackState = {
+    this.updateStatus({
       status: "ready",
       chunkIndex: 0,
       chunkCount: chunks.length,
-    };
-    this.updateStatus(readyState);
-
-    // Open sidebar if in sidebar mode
-    if (this.settings.controlPosition === "sidebar") {
-      await this.activateSidebarView();
-    }
+    });
   }
 
   // --- Playback control methods (called from UI buttons) ---

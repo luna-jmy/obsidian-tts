@@ -246,6 +246,7 @@ export class EdgeTtsEngine {
 			VoiceType: parseInt(settings.tencentVoiceType) || 1001,
 			Speed: speed,
 			Volume: Math.round(settings.volume * 5),
+			Codec: "mp3",
 		});
 
 		const contentType = "application/json; charset=utf-8";

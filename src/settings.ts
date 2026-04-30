@@ -118,6 +118,20 @@ export class TtsReaderSettingTab extends PluginSettingTab {
       void this.renderVoiceSettings(voiceContainer);
     }
 
+    new Setting(containerEl)
+      .setName("Playback controls")
+      .setDesc("Where to show TTS playback controls during reading.")
+      .addDropdown((dropdown) => dropdown
+        .addOption("floating", "Floating bar (bottom of editor)")
+        .addOption("sidebar", "Right sidebar panel")
+        .setValue(this.plugin.settings.controlPosition)
+        .onChange(async (value: string) => {
+          this.plugin.settings.controlPosition = value as "floating" | "sidebar";
+          await this.plugin.saveSettings();
+          this.plugin.rebuildPlaybackUI();
+        })
+      );
+
     containerEl.createEl("h3", { text: "Content cleanup" });
     this.addCleanupToggle("Skip frontmatter", "Do not read YAML properties at the top of a note.", "skipFrontmatter");
     this.addCleanupToggle("Skip code blocks", "Do not read fenced code blocks or math blocks.", "skipCodeBlocks");

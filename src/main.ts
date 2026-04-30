@@ -1,5 +1,7 @@
 import { Editor, MarkdownView, Notice, Platform, Plugin, TFile } from "obsidian";
 import { EdgeTtsEngine } from "./edge-tts";
+import { PlaybackFloatingBar } from "./playback-floating";
+import { TtsPlaybackView, TTS_PLAYBACK_VIEW_TYPE } from "./playback-sidebar";
 import { TtsReaderSettingTab } from "./settings";
 import { SystemTtsEngine } from "./system-tts";
 import { chunkTextForSpeech, cleanMarkdownForSpeech, extractCurrentSection } from "./text";
@@ -8,6 +10,7 @@ import { DEFAULT_SETTINGS, PlaybackState, TextChunk, TtsReaderSettings } from ".
 export default class TtsReaderPlugin extends Plugin {
   settings: TtsReaderSettings = { ...DEFAULT_SETTINGS };
   tts!: SystemTtsEngine | EdgeTtsEngine;
+  private playbackUI: PlaybackFloatingBar | null = null;
   private statusBarEl: HTMLElement | null = null;
   private lastChunks: TextChunk[] = [];
 
@@ -27,6 +30,9 @@ export default class TtsReaderPlugin extends Plugin {
           () => this.settings,
           (state) => this.updateStatus(state)
         );
+
+    this.registerView(TTS_PLAYBACK_VIEW_TYPE, (leaf) => new TtsPlaybackView(leaf, this));
+    this.initPlaybackUI();
 
     this.addRibbonIcon("volume-2", "Read current note", () => {
       void this.toggleCurrentNoteReading();
@@ -88,11 +94,21 @@ export default class TtsReaderPlugin extends Plugin {
       }
     });
 
+    this.addCommand({
+      id: "open-tts-panel",
+      name: "Open TTS playback panel",
+      callback: () => {
+        void this.activateSidebarView();
+      }
+    });
+
     this.addSettingTab(new TtsReaderSettingTab(this.app, this));
   }
 
   onunload(): void {
     this.tts.stop(false);
+    this.playbackUI?.destroy();
+    this.playbackUI = null;
   }
 
   async loadSettings(): Promise<void> {
@@ -155,19 +171,6 @@ export default class TtsReaderPlugin extends Plugin {
     await this.readCurrentNote();
   }
 
-  private pauseOrResume(): void {
-    if (!this.tts.isActive()) {
-      new Notice("Nothing is being read.");
-      return;
-    }
-
-    if (this.tts.isPaused()) {
-      this.tts.resume();
-    } else {
-      this.tts.pause();
-    }
-  }
-
   private async speakMarkdown(markdown: string, source: TFile | string): Promise<void> {
     const cleanText = cleanMarkdownForSpeech(markdown, this.settings.cleanup);
     const chunks = chunkTextForSpeech(cleanText, this.settings.chunkSize);
@@ -203,6 +206,61 @@ export default class TtsReaderPlugin extends Plugin {
     }
   }
 
+  // Public methods for playback UI
+  pauseOrResume(): void {
+    if (!this.tts.isActive()) {
+      new Notice("Nothing is being read.");
+      return;
+    }
+    if (this.tts.isPaused()) {
+      this.tts.resume();
+    } else {
+      this.tts.pause();
+    }
+  }
+
+  ttsStop(): void {
+    this.tts.stop();
+  }
+
+  ttsNext(): void {
+    this.tts.next();
+  }
+
+  ttsPrevious(): void {
+    this.tts.previous();
+  }
+
+  rebuildPlaybackUI(): void {
+    this.playbackUI?.destroy();
+    this.playbackUI = null;
+    this.initPlaybackUI();
+  }
+
+  private initPlaybackUI(): void {
+    if (this.settings.controlPosition === "floating") {
+      this.playbackUI = new PlaybackFloatingBar(
+        () => this.pauseOrResume(),
+        () => this.tts.stop(),
+        () => this.tts.previous(),
+        () => this.tts.next(),
+      );
+    }
+  }
+
+  private async activateSidebarView(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(TTS_PLAYBACK_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: TTS_PLAYBACK_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+
   private updateStatus(state: PlaybackState): void {
     if (!this.statusBarEl) {
       return;
@@ -211,17 +269,22 @@ export default class TtsReaderPlugin extends Plugin {
     if (state.status === "speaking" || state.status === "paused") {
       const current = Math.min(state.chunkIndex + 1, state.chunkCount);
       this.statusBarEl.setText(`TTS ${state.status} ${current}/${state.chunkCount}`);
-      return;
-    }
-
-    if (state.status === "error") {
+    } else if (state.status === "error") {
       this.statusBarEl.setText("TTS error");
       if (state.message) {
         new Notice(state.message);
       }
-      return;
+    } else {
+      this.statusBarEl.setText(`TTS ${state.status}`);
     }
 
-    this.statusBarEl.setText(`TTS ${state.status}`);
+    // Forward to playback UI
+    this.playbackUI?.update(state);
+    const leaves = this.app.workspace.getLeavesOfType(TTS_PLAYBACK_VIEW_TYPE);
+    for (const leaf of leaves) {
+      if (leaf.view instanceof TtsPlaybackView) {
+        leaf.view.update(state);
+      }
+    }
   }
 }

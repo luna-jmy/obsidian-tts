@@ -26,6 +26,7 @@ export interface TtsReaderSettings {
   tencentSecretId: string;
   tencentSecretKey: string;
   tencentVoiceType: string;
+  controlPosition: "floating" | "sidebar";
 }
 
 export type PlaybackStatus =
@@ -61,5 +62,6 @@ export const DEFAULT_SETTINGS: TtsReaderSettings = {
   },
   tencentSecretId: "",
   tencentSecretKey: "",
-  tencentVoiceType: "1001"
+  tencentVoiceType: "1001",
+  controlPosition: "floating"
 };

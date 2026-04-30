@@ -28,6 +28,7 @@ export class EdgeTtsEngine {
 	private sessionId = 0;
 	private audioElement: HTMLAudioElement | null = null;
 	private currentBlobUrl: string | null = null;
+	private prefetchedAudio: string | null = null;
 	private static readonly MAX_CHUNK_CHARS = 150; // Tencent TextToVoice limit
 
 	constructor(
@@ -92,6 +93,7 @@ export class EdgeTtsEngine {
 		this.sessionId += 1;
 		this.isStopped = true;
 		this.paused = false;
+		this.prefetchedAudio = null;
 		this.cleanup();
 		if (emitState) {
 			this.emit("stopped");
@@ -112,6 +114,7 @@ export class EdgeTtsEngine {
 		this.sessionId += 1;
 		this.currentIndex = index;
 		this.paused = false;
+		this.prefetchedAudio = null;
 		this.cleanup();
 		this.synthesizeAndPlay(this.sessionId);
 	}
@@ -161,7 +164,13 @@ export class EdgeTtsEngine {
 		}
 
 		try {
-			const audioBase64 = await this.callTencentTts(chunk.text, settings);
+			let audioBase64: string;
+			if (this.prefetchedAudio) {
+				audioBase64 = this.prefetchedAudio;
+				this.prefetchedAudio = null;
+			} else {
+				audioBase64 = await this.callTencentTts(chunk.text, settings);
+			}
 
 			if (this.isStopped || sessionId !== this.sessionId) return;
 
@@ -181,6 +190,16 @@ export class EdgeTtsEngine {
 			audio.onplay = () => {
 				if (sessionId === this.sessionId) {
 					this.emit("speaking");
+				}
+				// Pre-fetch next chunk while current one plays
+				const nextIndex = this.currentIndex + 1;
+				if (nextIndex < this.chunks.length) {
+					const nextChunk = this.chunks[nextIndex];
+					this.callTencentTts(nextChunk.text, settings).then((base64) => {
+						if (sessionId === this.sessionId && !this.isStopped) {
+							this.prefetchedAudio = base64;
+						}
+					}).catch(() => {});
 				}
 			};
 
@@ -217,11 +236,15 @@ export class EdgeTtsEngine {
 		const timestamp = Math.floor(Date.now() / 1000);
 		const date = new Date(timestamp * 1000).toISOString().split("T")[0];
 
+		// Speed: Tencent range -2 (slowest) to 6 (fastest), default 0
+		// Map settings.rate 0.5-2.0 to -2..4 (0.5→-2, 1.0→0, 2.0→4)
+		const speed = Math.max(-2, Math.min(6, Math.round((settings.rate - 1) * 4)));
+
 		const payload = JSON.stringify({
 			Text: text,
 			SessionId: crypto.randomUUID(),
 			VoiceType: parseInt(settings.tencentVoiceType) || 1001,
-			Speed: Math.round(settings.rate * 5),
+			Speed: speed,
 			Volume: Math.round(settings.volume * 5),
 		});
 

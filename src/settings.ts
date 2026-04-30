@@ -1,4 +1,5 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Platform, PluginSettingTab, Setting } from "obsidian";
+import { EDGE_VOICES } from "./edge-tts";
 import type TtsReaderPlugin from "./main";
 
 export class TtsReaderSettingTab extends PluginSettingTab {
@@ -13,7 +14,9 @@ export class TtsReaderSettingTab extends PluginSettingTab {
     containerEl.createEl("h2", { text: "TTS Reader" });
     containerEl.createEl("p", {
       cls: "tts-reader-settings-note",
-      text: "This MVP uses your operating system text-to-speech voices. Install offline Chinese and English voices in the OS or Android TTS settings for offline use."
+      text: Platform.isAndroidApp
+        ? "Android uses Edge TTS cloud voices (requires internet)."
+        : "This plugin uses your operating system text-to-speech voices. Install offline Chinese and English voices in the OS settings for offline use."
     });
 
     new Setting(containerEl)
@@ -66,11 +69,49 @@ export class TtsReaderSettingTab extends PluginSettingTab {
 
     const voiceContainer = containerEl.createDiv();
     voiceContainer.createEl("h3", { text: "Voices" });
-    voiceContainer.createEl("p", {
-      cls: "tts-reader-settings-note",
-      text: "Voice choices come from the current device. Leave fields on Auto unless you need a specific Chinese or English voice."
-    });
-    void this.renderVoiceSettings(voiceContainer);
+
+    if (Platform.isAndroidApp) {
+      voiceContainer.createEl("p", {
+        cls: "tts-reader-settings-note",
+        text: "Select Edge TTS cloud voices for Chinese and English text."
+      });
+
+      new Setting(voiceContainer)
+        .setName("Chinese voice")
+        .setDesc("Used for Chinese or mixed Chinese-English text.")
+        .addDropdown((dropdown) => {
+          EDGE_VOICES.chinese.forEach((v) => {
+            dropdown.addOption(v.name, v.label);
+          });
+          dropdown
+            .setValue(this.plugin.settings.edgeChineseVoice)
+            .onChange(async (value) => {
+              this.plugin.settings.edgeChineseVoice = value;
+              await this.plugin.saveSettings();
+            });
+        });
+
+      new Setting(voiceContainer)
+        .setName("English voice")
+        .setDesc("Used for English text.")
+        .addDropdown((dropdown) => {
+          EDGE_VOICES.english.forEach((v) => {
+            dropdown.addOption(v.name, v.label);
+          });
+          dropdown
+            .setValue(this.plugin.settings.edgeEnglishVoice)
+            .onChange(async (value) => {
+              this.plugin.settings.edgeEnglishVoice = value;
+              await this.plugin.saveSettings();
+            });
+        });
+    } else {
+      voiceContainer.createEl("p", {
+        cls: "tts-reader-settings-note",
+        text: "Voice choices come from the current device. Leave fields on Auto unless you need a specific Chinese or English voice."
+      });
+      void this.renderVoiceSettings(voiceContainer);
+    }
 
     containerEl.createEl("h3", { text: "Content cleanup" });
     this.addCleanupToggle("Skip frontmatter", "Do not read YAML properties at the top of a note.", "skipFrontmatter");

@@ -1,4 +1,5 @@
-import { Editor, MarkdownView, Notice, Plugin, TFile } from "obsidian";
+import { Editor, MarkdownView, Notice, Platform, Plugin, TFile } from "obsidian";
+import { EdgeTtsEngine } from "./edge-tts";
 import { TtsReaderSettingTab } from "./settings";
 import { SystemTtsEngine } from "./system-tts";
 import { chunkTextForSpeech, cleanMarkdownForSpeech, extractCurrentSection } from "./text";
@@ -6,7 +7,7 @@ import { DEFAULT_SETTINGS, PlaybackState, TextChunk, TtsReaderSettings } from ".
 
 export default class TtsReaderPlugin extends Plugin {
   settings: TtsReaderSettings = { ...DEFAULT_SETTINGS };
-  tts!: SystemTtsEngine;
+  tts!: SystemTtsEngine | EdgeTtsEngine;
   private statusBarEl: HTMLElement | null = null;
   private lastChunks: TextChunk[] = [];
 
@@ -17,10 +18,15 @@ export default class TtsReaderPlugin extends Plugin {
     this.statusBarEl.addClass("tts-reader-status");
     this.updateStatus({ status: "idle", chunkIndex: 0, chunkCount: 0 });
 
-    this.tts = new SystemTtsEngine(
-      () => this.settings,
-      (state) => this.updateStatus(state)
-    );
+    this.tts = Platform.isAndroidApp
+      ? new EdgeTtsEngine(
+          () => this.settings,
+          (state) => this.updateStatus(state)
+        )
+      : new SystemTtsEngine(
+          () => this.settings,
+          (state) => this.updateStatus(state)
+        );
 
     this.addRibbonIcon("volume-2", "Read current note", () => {
       void this.toggleCurrentNoteReading();

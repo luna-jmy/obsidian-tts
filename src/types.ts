@@ -23,6 +23,8 @@ export interface TtsReaderSettings {
   volume: number;
   chunkSize: number;
   cleanup: CleanupSettings;
+  edgeChineseVoice: string;
+  edgeEnglishVoice: string;
 }
 
 export type PlaybackStatus =
@@ -55,5 +57,7 @@ export const DEFAULT_SETTINGS: TtsReaderSettings = {
     skipEmbeds: true,
     skipImages: true,
     skipTables: false
-  }
+  },
+  edgeChineseVoice: "zh-CN-XiaoxiaoNeural",
+  edgeEnglishVoice: "en-US-JennyNeural"
 };

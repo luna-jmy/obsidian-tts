@@ -110,6 +110,12 @@ export class EdgeTtsEngine {
 		this.jumpTo(Math.max(this.currentIndex - 1, 0));
 	}
 
+	seekBy(seconds: number): void {
+		if (!this.isActive() || !this.audioElement) return;
+		const newTime = Math.max(0, this.audioElement.currentTime + seconds);
+		this.audioElement.currentTime = newTime;
+	}
+
 	private jumpTo(index: number): void {
 		this.sessionId += 1;
 		this.currentIndex = index;

@@ -31,12 +31,14 @@ export class PlaybackFloatingBar {
 	}
 
 	update(state: PlaybackState): void {
-		const active = state.status === "preparing" || state.status === "speaking" || state.status === "paused";
-		this.containerEl.style.display = active ? "" : "none";
+		// Show when ready, preparing, speaking, or paused
+		const visible = state.status === "ready" || state.status === "preparing" || state.status === "speaking" || state.status === "paused";
+		this.containerEl.style.display = visible ? "" : "none";
 
-		if (!active) return;
+		if (!visible) return;
 
-		const icon = state.status === "speaking" ? "pause" : "play";
+		// Play/pause icon: show "play" when ready/paused, "pause" when speaking
+		const icon = (state.status === "speaking") ? "pause" : "play";
 		setIcon(this.playPauseBtn, icon);
 
 		if (state.chunkCount > 0) {

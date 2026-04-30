@@ -34,8 +34,8 @@ export default class TtsReaderPlugin extends Plugin {
     this.registerView(TTS_PLAYBACK_VIEW_TYPE, (leaf) => new TtsPlaybackView(leaf, this));
     this.initPlaybackUI();
 
-    this.addRibbonIcon("volume-2", "Read current note", () => {
-      void this.toggleCurrentNoteReading();
+    this.addRibbonIcon("volume-2", "Open TTS player", () => {
+      void this.openTtsPlayer();
     });
 
     this.addCommand({
@@ -74,7 +74,7 @@ export default class TtsReaderPlugin extends Plugin {
       id: "stop",
       name: "Stop reading",
       callback: () => {
-        this.tts.stop();
+        this.ttsStop();
       }
     });
 
@@ -82,7 +82,7 @@ export default class TtsReaderPlugin extends Plugin {
       id: "previous-chunk",
       name: "Read previous chunk",
       callback: () => {
-        this.tts.previous();
+        this.ttsPrevious();
       }
     });
 
@@ -90,7 +90,7 @@ export default class TtsReaderPlugin extends Plugin {
       id: "next-chunk",
       name: "Read next chunk",
       callback: () => {
-        this.tts.next();
+        this.ttsNext();
       }
     });
 
@@ -162,14 +162,92 @@ export default class TtsReaderPlugin extends Plugin {
     await this.speakChunks(chunks, label);
   }
 
-  private async toggleCurrentNoteReading(): Promise<void> {
-    if (this.tts.isActive()) {
-      this.tts.stop();
+  // --- New UX: Icon opens player UI without auto-playing ---
+
+  async openTtsPlayer(): Promise<void> {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    const file = view?.file;
+
+    if (!file) {
+      new Notice("Open a Markdown note before starting TTS.");
       return;
     }
 
-    await this.readCurrentNote();
+    // Stop any current playback
+    if (this.tts.isActive()) {
+      this.tts.stop(false);
+    }
+
+    const markdown = await this.app.vault.cachedRead(file);
+    const cleanText = cleanMarkdownForSpeech(markdown, this.settings.cleanup);
+    const chunks = chunkTextForSpeech(cleanText, this.settings.chunkSize);
+
+    if (chunks.length === 0) {
+      new Notice("There is no readable text after cleanup.");
+      return;
+    }
+
+    if (!this.tts.isSupported()) {
+      new Notice("System text-to-speech is not available in this Obsidian environment.");
+      return;
+    }
+
+    this.lastChunks = chunks;
+
+    // Show UI in "ready" state (prepared but not playing)
+    const readyState: PlaybackState = {
+      status: "ready",
+      chunkIndex: 0,
+      chunkCount: chunks.length,
+    };
+    this.updateStatus(readyState);
+
+    // Open sidebar if in sidebar mode
+    if (this.settings.controlPosition === "sidebar") {
+      await this.activateSidebarView();
+    }
   }
+
+  // --- Playback control methods (called from UI buttons) ---
+
+  async ttsPlayPause(): Promise<void> {
+    if (this.tts.isActive()) {
+      // Currently speaking or paused — toggle pause
+      this.pauseOrResume();
+    } else if (this.lastChunks.length > 0) {
+      // Ready state — start playing from current position
+      try {
+        await this.tts.speak(this.lastChunks);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        new Notice(message);
+      }
+    }
+  }
+
+  ttsStop(): void {
+    if (this.lastChunks.length > 0) {
+      // Reset to beginning and show "ready" state
+      this.tts.stop(false);
+      this.updateStatus({
+        status: "ready",
+        chunkIndex: 0,
+        chunkCount: this.lastChunks.length,
+      });
+    } else {
+      this.tts.stop();
+    }
+  }
+
+  ttsNext(): void {
+    this.tts.next();
+  }
+
+  ttsPrevious(): void {
+    this.tts.previous();
+  }
+
+  // --- Internal helpers ---
 
   private async speakMarkdown(markdown: string, source: TFile | string): Promise<void> {
     const cleanText = cleanMarkdownForSpeech(markdown, this.settings.cleanup);
@@ -206,7 +284,6 @@ export default class TtsReaderPlugin extends Plugin {
     }
   }
 
-  // Public methods for playback UI
   pauseOrResume(): void {
     if (!this.tts.isActive()) {
       new Notice("Nothing is being read.");
@@ -219,18 +296,6 @@ export default class TtsReaderPlugin extends Plugin {
     }
   }
 
-  ttsStop(): void {
-    this.tts.stop();
-  }
-
-  ttsNext(): void {
-    this.tts.next();
-  }
-
-  ttsPrevious(): void {
-    this.tts.previous();
-  }
-
   rebuildPlaybackUI(): void {
     this.playbackUI?.destroy();
     this.playbackUI = null;
@@ -240,10 +305,10 @@ export default class TtsReaderPlugin extends Plugin {
   private initPlaybackUI(): void {
     if (this.settings.controlPosition === "floating") {
       this.playbackUI = new PlaybackFloatingBar(
-        () => this.pauseOrResume(),
-        () => this.tts.stop(),
-        () => this.tts.previous(),
-        () => this.tts.next(),
+        () => this.ttsPlayPause(),
+        () => this.ttsStop(),
+        () => this.ttsPrevious(),
+        () => this.ttsNext(),
       );
     }
   }
@@ -269,6 +334,8 @@ export default class TtsReaderPlugin extends Plugin {
     if (state.status === "speaking" || state.status === "paused") {
       const current = Math.min(state.chunkIndex + 1, state.chunkCount);
       this.statusBarEl.setText(`TTS ${state.status} ${current}/${state.chunkCount}`);
+    } else if (state.status === "ready") {
+      this.statusBarEl.setText(`TTS ready ${state.chunkCount} chunks`);
     } else if (state.status === "error") {
       this.statusBarEl.setText("TTS error");
       if (state.message) {

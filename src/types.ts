@@ -31,6 +31,7 @@ export interface TtsReaderSettings {
 
 export type PlaybackStatus =
   | "idle"
+  | "ready"
   | "preparing"
   | "speaking"
   | "paused"

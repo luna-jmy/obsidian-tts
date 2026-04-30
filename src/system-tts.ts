@@ -130,6 +130,16 @@ export class SystemTtsEngine {
     this.jumpTo(previousIndex);
   }
 
+  seekBy(seconds: number): void {
+    if (!this.isActive()) return;
+    // SystemTTS has no precise time seeking; approximate with chunk navigation
+    if (seconds < 0) {
+      this.previous();
+    } else {
+      this.next();
+    }
+  }
+
   private jumpTo(index: number): void {
     if (!this.isSupported()) {
       return;

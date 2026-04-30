@@ -40,7 +40,7 @@ export class TtsPlaybackView extends ItemView {
 		const controls = container.createDiv({ cls: "tts-playback-controls" });
 
 		this.prevBtn = this.createButton(controls, "skip-back", () => this.plugin.ttsPrevious());
-		this.playPauseBtn = this.createButton(controls, "play", () => this.plugin.pauseOrResume());
+		this.playPauseBtn = this.createButton(controls, "play", () => this.plugin.ttsPlayPause());
 		this.stopBtn = this.createButton(controls, "square", () => this.plugin.ttsStop());
 		this.nextBtn = this.createButton(controls, "skip-forward", () => this.plugin.ttsNext());
 
@@ -59,7 +59,8 @@ export class TtsPlaybackView extends ItemView {
 	update(state: PlaybackState): void {
 		if (!this.playPauseBtn || !this.progressEl) return;
 
-		const icon = state.status === "speaking" ? "pause" : "play";
+		// Play/pause icon: show "play" when ready/paused, "pause" when speaking
+		const icon = (state.status === "speaking") ? "pause" : "play";
 		setIcon(this.playPauseBtn, icon);
 
 		if (state.chunkCount > 0) {
@@ -68,6 +69,7 @@ export class TtsPlaybackView extends ItemView {
 		} else {
 			const labels: Record<string, string> = {
 				idle: "Idle",
+				ready: "Ready",
 				preparing: "Preparing...",
 				stopped: "Stopped",
 				error: "Error",

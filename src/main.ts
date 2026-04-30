@@ -318,6 +318,15 @@ export default class TtsReaderPlugin extends Plugin {
     this.initPlaybackUI();
   }
 
+  dismissPlayer(): void {
+    if (this.tts.isActive()) {
+      this.tts.stop(false);
+    }
+    this.lastChunks = [];
+    this.lastFile = null;
+    this.updateStatus({ status: "idle", chunkIndex: 0, chunkCount: 0 });
+  }
+
   private initPlaybackUI(): void {
     if (this.settings.controlPosition === "floating") {
       this.playbackUI = new PlaybackFloatingBar(
@@ -325,6 +334,7 @@ export default class TtsReaderPlugin extends Plugin {
         () => this.ttsStop(),
         () => this.ttsPrevious(),
         () => this.ttsNext(),
+        () => this.dismissPlayer(),
       );
     }
   }

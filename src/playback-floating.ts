@@ -15,6 +15,7 @@ export class PlaybackFloatingBar {
 		private readonly onStop: () => void,
 		private readonly onPrevious: () => void,
 		private readonly onNext: () => void,
+		private readonly onClose: () => void,
 	) {
 		this.containerEl = document.body.createDiv({ cls: "tts-playback-floating" });
 		this.containerEl.style.display = "none";
@@ -25,6 +26,7 @@ export class PlaybackFloatingBar {
 		this.playPauseBtn = this.createButton("play", onPlayPause);
 		this.stopBtn = this.createButton("square", onStop);
 		this.nextBtn = this.createButton("skip-forward", onNext);
+		this.createButton("x", onClose);
 
 		this.progressEl = this.innerEl.createSpan({ cls: "tts-playback-progress" });
 		this.progressEl.setText("");

@@ -105,6 +105,17 @@ export class TtsReaderSettingTab extends PluginSettingTab {
               await this.plugin.saveSettings();
             });
         });
+
+      new Setting(containerEl)
+        .setName("TTS proxy URL")
+        .setDesc("Cloudflare Worker URL for Edge TTS. Leave default if you haven't deployed your own.")
+        .addText((text) => text
+          .setPlaceholder("https://edge-tts-proxy.your-name.workers.dev")
+          .setValue(this.plugin.settings.proxyUrl)
+          .onChange(async (value) => {
+            this.plugin.settings.proxyUrl = value.trim();
+            await this.plugin.saveSettings();
+          }));
     } else {
       voiceContainer.createEl("p", {
         cls: "tts-reader-settings-note",

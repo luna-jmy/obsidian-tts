@@ -1,5 +1,8 @@
-import { EdgeTTSBrowser } from "edge-tts-universal";
+import { Platform, requestUrl } from "obsidian";
 import { ChunkLanguage, PlaybackState, TextChunk, TtsReaderSettings } from "./types";
+
+// Default Cloudflare Worker URL — replace with your own after deployment
+const DEFAULT_PROXY_URL = "https://edge-tts-proxy.your-name.workers.dev";
 
 export const EDGE_VOICES = {
 	chinese: [
@@ -144,19 +147,27 @@ export class EdgeTtsEngine {
 		const voice = this.pickVoice(chunk.language);
 
 		try {
-			const tts = new EdgeTTSBrowser(chunk.text, voice, {
-				rate: this.toProsodyPercent(settings.rate),
-				volume: this.toProsodyPercent(settings.volume),
-				pitch: this.toProsodyHz(settings.pitch),
+			const proxyUrl = settings.proxyUrl || DEFAULT_PROXY_URL;
+			const response = await requestUrl({
+				url: proxyUrl,
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					text: chunk.text,
+					voice,
+					rate: this.toProsodyPercent(settings.rate),
+					volume: this.toProsodyPercent(settings.volume),
+					pitch: this.toProsodyHz(settings.pitch),
+				}),
 			});
-
-			const result = await tts.synthesize();
 
 			if (this.isStopped || sessionId !== this.sessionId) {
 				return;
 			}
 
-			const blob = result.audio;
+			// response.arrayBuffer is available from Obsidian requestUrl
+			const audioBuffer = response.arrayBuffer;
+			const blob = new Blob([audioBuffer], { type: "audio/mpeg" });
 			const url = URL.createObjectURL(blob);
 			this.currentBlobUrl = url;
 
@@ -197,7 +208,12 @@ export class EdgeTtsEngine {
 
 			this.isStopped = true;
 			this.paused = false;
-			const message = error instanceof Error ? error.message : String(error);
+			const message =
+				error instanceof Error
+					? error.message
+					: typeof error === "object" && error !== null
+						? JSON.stringify(error)
+						: String(error);
 			this.emit("error", `Edge TTS error: ${message}`);
 		}
 	}

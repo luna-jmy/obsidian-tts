@@ -25,6 +25,7 @@ export interface TtsReaderSettings {
   cleanup: CleanupSettings;
   edgeChineseVoice: string;
   edgeEnglishVoice: string;
+  proxyUrl: string;
 }
 
 export type PlaybackStatus =
@@ -59,5 +60,6 @@ export const DEFAULT_SETTINGS: TtsReaderSettings = {
     skipTables: false
   },
   edgeChineseVoice: "zh-CN-XiaoxiaoNeural",
-  edgeEnglishVoice: "en-US-JennyNeural"
+  edgeEnglishVoice: "en-US-JennyNeural",
+  proxyUrl: ""
 };

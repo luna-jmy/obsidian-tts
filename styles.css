@@ -1,0 +1,10 @@
+.tts-reader-status {
+  color: var(--text-muted);
+}
+
+.tts-reader-settings-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+  margin: 0.25rem 0 0.75rem;
+}

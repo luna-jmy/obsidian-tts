@@ -1,24 +1,21 @@
 import { requestUrl } from "obsidian";
-import { ChunkLanguage, PlaybackState, TextChunk, TtsReaderSettings } from "./types";
+import { PlaybackState, TextChunk, TtsReaderSettings } from "./types";
 
-// Baidu free TTS voices
-const BAIDU_VOICES = {
-	chinese: [
-		{ key: "0", label: "女声 (默认)" },
-		{ key: "1", label: "男声" },
-		{ key: "3", label: "情感合成-度逍遥" },
-		{ key: "4", label: "情感合成-度丫丫" },
-		{ key: "5", label: "度小娇" },
-		{ key: "6", label: "度小美" },
-		{ key: "7", label: "度小宇" },
-	],
-	english: [
-		{ key: "0", label: "Female (default)" },
-		{ key: "1", label: "Male" },
-	],
-};
-
-export { BAIDU_VOICES };
+// Tencent Cloud TTS voice types
+export const TENCENT_VOICES = [
+	{ key: "1001", label: "智瑜 (女声)" },
+	{ key: "1002", label: "智美 (女声)" },
+	{ key: "1003", label: "智强 (男声)" },
+	{ key: "1004", label: "智甜 (女声)" },
+	{ key: "1005", label: "智强（多语种）" },
+	{ key: "1006", label: "智琳（粤语女声）" },
+	{ key: "1007", label: "智琪 (女声)" },
+	{ key: "1008", label: "智诚 (男声)" },
+	{ key: "1009", label: "智蓉 (女声)" },
+	{ key: "1010", label: "智皓（多语种男声）" },
+	{ key: "1017", label: "智瑜（英文女声）" },
+	{ key: "1018", label: "智强（英文男声）" },
+];
 
 type SettingsProvider = () => TtsReaderSettings;
 type StateListener = (state: PlaybackState) => void;
@@ -31,6 +28,7 @@ export class EdgeTtsEngine {
 	private sessionId = 0;
 	private audioElement: HTMLAudioElement | null = null;
 	private currentBlobUrl: string | null = null;
+	private static readonly MAX_CHUNK_CHARS = 150; // Tencent TextToVoice limit
 
 	constructor(
 		private readonly getSettings: SettingsProvider,
@@ -60,21 +58,22 @@ export class EdgeTtsEngine {
 	async speak(chunks: TextChunk[], startIndex = 0): Promise<void> {
 		this.stop(false);
 
-		this.sessionId += 1;
-		this.chunks = chunks;
-		this.currentIndex = Math.max(0, Math.min(startIndex, chunks.length - 1));
+		this.chunks = this.rechunkForTencent(chunks);
+		this.currentIndex = Math.max(0, Math.min(startIndex, this.chunks.length - 1));
 		this.isStopped = false;
 		this.paused = false;
 
+		this.sessionId += 1;
+		const sid = this.sessionId;
+
 		this.emit("preparing");
-		await this.synthesizeAndPlay(this.sessionId);
+		await this.synthesizeAndPlay(sid);
 	}
 
 	pause(): void {
 		if (!this.isActive() || this.paused) {
 			return;
 		}
-
 		this.audioElement?.pause();
 		this.paused = true;
 		this.emit("paused");
@@ -84,7 +83,6 @@ export class EdgeTtsEngine {
 		if (!this.isActive() || !this.paused) {
 			return;
 		}
-
 		this.audioElement?.play().catch(() => {});
 		this.paused = false;
 		this.emit("speaking");
@@ -95,28 +93,19 @@ export class EdgeTtsEngine {
 		this.isStopped = true;
 		this.paused = false;
 		this.cleanup();
-
 		if (emitState) {
 			this.emit("stopped");
 		}
 	}
 
 	next(): void {
-		if (!this.isActive()) {
-			return;
-		}
-
-		const nextIndex = Math.min(this.currentIndex + 1, this.chunks.length - 1);
-		this.jumpTo(nextIndex);
+		if (!this.isActive()) return;
+		this.jumpTo(Math.min(this.currentIndex + 1, this.chunks.length - 1));
 	}
 
 	previous(): void {
-		if (!this.isActive()) {
-			return;
-		}
-
-		const previousIndex = Math.max(this.currentIndex - 1, 0);
-		this.jumpTo(previousIndex);
+		if (!this.isActive()) return;
+		this.jumpTo(Math.max(this.currentIndex - 1, 0));
 	}
 
 	private jumpTo(index: number): void {
@@ -127,10 +116,33 @@ export class EdgeTtsEngine {
 		this.synthesizeAndPlay(this.sessionId);
 	}
 
-	private async synthesizeAndPlay(sessionId: number): Promise<void> {
-		if (this.isStopped || sessionId !== this.sessionId) {
-			return;
+	private rechunkForTencent(chunks: TextChunk[]): TextChunk[] {
+		const result: TextChunk[] = [];
+		for (const chunk of chunks) {
+			if (chunk.text.length <= EdgeTtsEngine.MAX_CHUNK_CHARS) {
+				result.push(chunk);
+			} else {
+				const sentences = chunk.text.split(/(?<=[。！？.!?\n])/g);
+				let buffer = "";
+				let lang = chunk.language;
+				for (const s of sentences) {
+					if (buffer.length + s.length > EdgeTtsEngine.MAX_CHUNK_CHARS && buffer.length > 0) {
+						result.push({ text: buffer, language: lang });
+						buffer = s;
+					} else {
+						buffer += s;
+					}
+				}
+				if (buffer.length > 0) {
+					result.push({ text: buffer, language: lang });
+				}
+			}
 		}
+		return result;
+	}
+
+	private async synthesizeAndPlay(sessionId: number): Promise<void> {
+		if (this.isStopped || sessionId !== this.sessionId) return;
 
 		if (this.currentIndex >= this.chunks.length) {
 			this.isStopped = true;
@@ -141,21 +153,25 @@ export class EdgeTtsEngine {
 
 		const chunk = this.chunks[this.currentIndex];
 		const settings = this.getSettings();
-		const voice = this.pickVoice(chunk.language);
+
+		if (!settings.tencentSecretId || !settings.tencentSecretKey) {
+			this.isStopped = true;
+			this.emit("error", "Please set Tencent Cloud SecretId and SecretKey in settings.");
+			return;
+		}
 
 		try {
-			// Baidu TTS: simple HTTP GET, returns MP3
-			const speed = Math.round(settings.rate * 5);
-			const url = `https://tts.baidu.com/text2audio?lan=${voice}&ie=UTF-8&spd=${speed}&pit=${Math.round(settings.pitch * 5)}&vol=${Math.round(settings.volume * 15)}&per=${settings.baiduVoiceKey}&tex=${encodeURIComponent(chunk.text)}`;
+			const audioBase64 = await this.callTencentTts(chunk.text, settings);
 
-			const response = await requestUrl({ url });
+			if (this.isStopped || sessionId !== this.sessionId) return;
 
-			if (this.isStopped || sessionId !== this.sessionId) {
-				return;
+			const binaryStr = atob(audioBase64);
+			const bytes = new Uint8Array(binaryStr.length);
+			for (let i = 0; i < binaryStr.length; i++) {
+				bytes[i] = binaryStr.charCodeAt(i);
 			}
 
-			const audioBuffer = response.arrayBuffer;
-			const blob = new Blob([audioBuffer], { type: "audio/mpeg" });
+			const blob = new Blob([bytes], { type: "audio/mp3" });
 			const blobUrl = URL.createObjectURL(blob);
 			this.currentBlobUrl = blobUrl;
 
@@ -169,20 +185,14 @@ export class EdgeTtsEngine {
 			};
 
 			audio.onended = () => {
-				if (this.isStopped || sessionId !== this.sessionId) {
-					return;
-				}
-
+				if (this.isStopped || sessionId !== this.sessionId) return;
 				this.cleanup();
 				this.currentIndex += 1;
 				this.synthesizeAndPlay(sessionId);
 			};
 
 			audio.onerror = () => {
-				if (this.isStopped || sessionId !== this.sessionId) {
-					return;
-				}
-
+				if (this.isStopped || sessionId !== this.sessionId) return;
 				this.isStopped = true;
 				this.paused = false;
 				this.emit("error", "Audio playback failed.");
@@ -190,27 +200,89 @@ export class EdgeTtsEngine {
 
 			await audio.play();
 		} catch (error) {
-			if (this.isStopped || sessionId !== this.sessionId) {
-				return;
-			}
-
+			if (this.isStopped || sessionId !== this.sessionId) return;
 			this.isStopped = true;
 			this.paused = false;
 			const message =
-				error instanceof Error
-					? error.message
-					: typeof error === "object" && error !== null
-						? JSON.stringify(error)
-						: String(error);
+				error instanceof Error ? error.message : String(error);
 			this.emit("error", `TTS error: ${message}`);
 		}
 	}
 
-	private pickVoice(language: ChunkLanguage): string {
-		if (language === "en") {
-			return "en";
+	private async callTencentTts(text: string, settings: TtsReaderSettings): Promise<string> {
+		const host = "tts.tencentcloudapi.com";
+		const service = "tts";
+		const action = "TextToVoice";
+		const version = "2019-08-23";
+		const timestamp = Math.floor(Date.now() / 1000);
+		const date = new Date(timestamp * 1000).toISOString().split("T")[0];
+
+		const payload = JSON.stringify({
+			Text: text,
+			SessionId: crypto.randomUUID(),
+			VoiceType: parseInt(settings.tencentVoiceType) || 1001,
+			Speed: Math.round(settings.rate * 5),
+			Volume: Math.round(settings.volume * 5),
+		});
+
+		const contentType = "application/json; charset=utf-8";
+
+		// Step 1: Build canonical request
+		const httpRequestMethod = "POST";
+		const canonicalUri = "/";
+		const canonicalQueryString = "";
+		const canonicalHeaders = `content-type:${contentType}\nhost:${host}\nx-tc-action:${action.toLowerCase()}\n`;
+		const signedHeaders = "content-type;host;x-tc-action";
+		const hashedPayload = await sha256Hex(payload);
+		const canonicalRequest = [
+			httpRequestMethod,
+			canonicalUri,
+			canonicalQueryString,
+			canonicalHeaders,
+			signedHeaders,
+			hashedPayload,
+		].join("\n");
+
+		// Step 2: Build string to sign
+		const algorithm = "TC3-HMAC-SHA256";
+		const credentialScope = `${date}/${service}/tc3_request`;
+		const hashedCanonicalRequest = await sha256Hex(canonicalRequest);
+		const stringToSign = [algorithm, timestamp, credentialScope, hashedCanonicalRequest].join("\n");
+
+		// Step 3: Calculate signature
+		const secretDate = await hmacSha256(`TC3${settings.tencentSecretKey}`, date);
+		const secretService = await hmacSha256(secretDate, service);
+		const secretSigning = await hmacSha256(secretService, "tc3_request");
+		const signature = await hmacSha256Hex(secretSigning, stringToSign);
+
+		// Step 4: Build authorization
+		const authorization = `${algorithm} Credential=${settings.tencentSecretId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+		// Step 5: Make request
+		const response = await requestUrl({
+			url: `https://${host}`,
+			method: "POST",
+			headers: {
+				"Content-Type": contentType,
+				"Host": host,
+				"X-TC-Action": action,
+				"X-TC-Version": version,
+				"X-TC-Timestamp": String(timestamp),
+				"X-TC-Region": "ap-beijing",
+				"Authorization": authorization,
+			},
+			body: payload,
+		});
+
+		const json = response.json;
+		if (json?.Response?.Error) {
+			throw new Error(json.Response.Error.Message || json.Response.Error.Code);
 		}
-		return "zh";
+		if (!json?.Response?.Audio) {
+			throw new Error("No audio in response");
+		}
+
+		return json.Response.Audio;
 	}
 
 	private cleanup(): void {
@@ -222,7 +294,6 @@ export class EdgeTtsEngine {
 			this.audioElement.src = "";
 			this.audioElement = null;
 		}
-
 		if (this.currentBlobUrl) {
 			URL.revokeObjectURL(this.currentBlobUrl);
 			this.currentBlobUrl = null;
@@ -237,4 +308,26 @@ export class EdgeTtsEngine {
 			message,
 		});
 	}
+}
+
+// --- Crypto helpers using Web Crypto API ---
+
+async function sha256Hex(data: string): Promise<string> {
+	const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+	return arrayBufferToHex(buf);
+}
+
+async function hmacSha256(key: ArrayBuffer | string, data: string): Promise<ArrayBuffer> {
+	const keyBuf = typeof key === "string" ? new TextEncoder().encode(key) : key;
+	const cryptoKey = await crypto.subtle.importKey("raw", keyBuf, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+	return crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
+}
+
+async function hmacSha256Hex(key: ArrayBuffer, data: string): Promise<string> {
+	const buf = await hmacSha256(key, data);
+	return arrayBufferToHex(buf);
+}
+
+function arrayBufferToHex(buf: ArrayBuffer): string {
+	return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
 }

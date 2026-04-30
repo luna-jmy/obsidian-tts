@@ -1,5 +1,5 @@
 import { App, Platform, PluginSettingTab, Setting } from "obsidian";
-import { BAIDU_VOICES } from "./edge-tts";
+import { TENCENT_VOICES } from "./edge-tts";
 import type TtsReaderPlugin from "./main";
 
 export class TtsReaderSettingTab extends PluginSettingTab {
@@ -15,7 +15,7 @@ export class TtsReaderSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "tts-reader-settings-note",
       text: Platform.isAndroidApp
-        ? "Android uses Baidu TTS cloud voices (requires internet)."
+        ? "Android uses Tencent Cloud TTS (requires internet and API credentials)."
         : "This plugin uses your operating system text-to-speech voices. Install offline Chinese and English voices in the OS settings for offline use."
     });
 
@@ -57,7 +57,7 @@ export class TtsReaderSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Chunk size")
-      .setDesc("Maximum characters per speech chunk. Smaller chunks are usually more stable on Android.")
+      .setDesc("Maximum characters per speech chunk.")
       .addSlider((slider) => slider
         .setLimits(200, 1200, 50)
         .setValue(this.plugin.settings.chunkSize)
@@ -73,20 +73,40 @@ export class TtsReaderSettingTab extends PluginSettingTab {
     if (Platform.isAndroidApp) {
       voiceContainer.createEl("p", {
         cls: "tts-reader-settings-note",
-        text: "Select a Baidu TTS voice for Chinese and English text."
+        text: "Configure Tencent Cloud TTS API credentials and voice."
       });
 
       new Setting(voiceContainer)
+        .setName("SecretId")
+        .setDesc("Tencent Cloud API SecretId.")
+        .addText((text) => text
+          .setValue(this.plugin.settings.tencentSecretId)
+          .onChange(async (value) => {
+            this.plugin.settings.tencentSecretId = value;
+            await this.plugin.saveSettings();
+          }));
+
+      new Setting(voiceContainer)
+        .setName("SecretKey")
+        .setDesc("Tencent Cloud API SecretKey.")
+        .addText((text) => text
+          .setValue(this.plugin.settings.tencentSecretKey)
+          .onChange(async (value) => {
+            this.plugin.settings.tencentSecretKey = value;
+            await this.plugin.saveSettings();
+          }));
+
+      new Setting(voiceContainer)
         .setName("Voice")
-        .setDesc("Voice used for all text on Android.")
+        .setDesc("TTS voice type.")
         .addDropdown((dropdown) => {
-          BAIDU_VOICES.chinese.forEach((v) => {
+          TENCENT_VOICES.forEach((v) => {
             dropdown.addOption(v.key, v.label);
           });
           dropdown
-            .setValue(this.plugin.settings.baiduVoiceKey)
+            .setValue(this.plugin.settings.tencentVoiceType)
             .onChange(async (value) => {
-              this.plugin.settings.baiduVoiceKey = value;
+              this.plugin.settings.tencentVoiceType = value;
               await this.plugin.saveSettings();
             });
         });

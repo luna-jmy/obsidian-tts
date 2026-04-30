@@ -23,10 +23,9 @@ export interface TtsReaderSettings {
   volume: number;
   chunkSize: number;
   cleanup: CleanupSettings;
-  edgeChineseVoice: string;
-  edgeEnglishVoice: string;
-  proxyUrl: string;
-  baiduVoiceKey: string;
+  tencentSecretId: string;
+  tencentSecretKey: string;
+  tencentVoiceType: string;
 }
 
 export type PlaybackStatus =
@@ -60,8 +59,7 @@ export const DEFAULT_SETTINGS: TtsReaderSettings = {
     skipImages: true,
     skipTables: false
   },
-  edgeChineseVoice: "zh-CN-XiaoxiaoNeural",
-  edgeEnglishVoice: "en-US-JennyNeural",
-  proxyUrl: "",
-  baiduVoiceKey: "0"
+  tencentSecretId: "",
+  tencentSecretKey: "",
+  tencentVoiceType: "1001"
 };
